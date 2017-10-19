@@ -1,0 +1,11 @@
+{
+  "name": "deployer",
+  "version": "0.0.1",
+  "main": "index.js",
+  "description": "Simple deploy module over SFTP",
+  "dependencies": {
+    "args": "^3.0.7",
+    "js-yaml": "^3.10.0",
+    "node-ssh": "^5.0.0"
+  }
+}
