@@ -1,0 +1,13 @@
+host: 127.0.0.1
+user: user
+pass: secret
+paths:
+    local: .
+    remote: /path/to/some/remote/folder
+scripts:
+    local:
+        pre:
+        post:
+    remote:
+        pre:
+        post: 
