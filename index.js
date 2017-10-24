@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 let yaml = require('js-yaml')
 let fs = require('fs')
 let _ = require('lodash')
@@ -33,19 +32,17 @@ if(fs.existsSync(configPath)) {
 //Create ignore instance
 var ig = ignore()
 
-//Add gitignore to ig
-if(fs.existsSync('.gitignore')) {
-    ig.add(fs.readFileSync('.gitignore').toString())
-}
-
 var globalGitIgnorePath = shell.exec('git config --global core.excludesfile', { async: false, silent: true }).stdout.trim()
 if(fs.existsSync(globalGitIgnorePath)) {
     ig.add(fs.readFileSync(globalGitIgnorePath).toString())
 }
 
-//Add the to ignore .git folder and the deployer script itself
+//Add the .git folder to ignore and the deployer script itself
 ig.add('.git')
 ig.add(configPath)
+
+//Add configured ignore paths
+ig.add(configs.ignore)
 
 //Shorthand function for executing script localy or remote (ssh)
 var executeScript = (handler, scripts, remote, remotePath) => {
@@ -93,105 +90,101 @@ var executeScript = (handler, scripts, remote, remotePath) => {
     })
 }
 
-var exec = () => {
-    //Create SSH instance
-    var ssh = new node_ssh()
+//Create SSH instance
+var ssh = new node_ssh()
 
-    Prom.sequence([
-        //Pre local script
-        () => new Promise((resolve, reject) => {
-            if(configs.scripts.local.pre && configs.scripts.local.pre[0]) {
-                console.log('Initiating execution of local scripts...')
-                executeScript(shell, configs.scripts.local.pre).then(result => resolve(result)).catch(error => reject(error))
-                return
-            }
-
-            resolve()
-        }),
-        //Connecting
-        () => new Promise((resolve, reject) => {
-            console.log('Connecting to sver through ssh...')
-            ssh.connect({
-                host: configs.host,
-                username: configs.user,
-                password: configs.pass
-            }).then(() => {
-                console.log('Connected!')
-                resolve()
-            }, error => {
-                console.log('Connection failed!')
-                reject(error)
-            })
-        }),
-        //Pre remote script
-        () => new Promise((resolve, reject) => {
-            if(configs.scripts.remote.pre && configs.scripts.remote.pre[0]) {
-                console.log('Initiating execution of remote scripts...')
-                executeScript(ssh, configs.scripts.remote.pre, true, configs.paths.remote).then(result => resolve(result)).catch(error => reject(error))
-                return
-            }
-            resolve()
-        }),
-        //Uploading folder
-        () => new Promise((resolve, reject) => {
-            console.log('Initiating file upload...')
-            countFiles(configs.paths.local, {
-                ignore(filePath) {
-                    return !ig.filter(filePath).length;
-                }
-            }, (error, result) => {
-                var bar = ProgressBar(result.files)
-                ssh.putDirectory(configs.paths.local, configs.paths.remote, {
-                    recursive: true,
-                    concurrency: 1,
-                    validate(itemPath) {
-                        return ig.filter(itemPath).length;
-                    },
-                    tick(localPath, remotePath, error) {
-                        if(error) { console.log(error); return; }
-                        bar.tick()
-                    }
-                }).then(status => {
-                    console.log('')
-                    resolve()
-                }, error => reject(error))
-            })
-
-        }),
-        //Post remote script
-        () => new Promise((resolve, reject) => {
-            if(configs.scripts.remote.post && configs.scripts.remote.post[0]) {
-                console.log('Initiating execution of remote scripts...')
-                executeScript(ssh, configs.scripts.remote.post, true, configs.paths.remote).then(result => resolve(result)).catch(error => reject(error))
-                return
-            }
-            resolve()
-        }),
-        //Post local script
-        () => new Promise((resolve, reject) => {
-            if(configs.scripts.local.post && configs.scripts.local.post[0]) {
-                console.log('Initiating execution of local scripts...')
-                executeScript(shell, configs.scripts.local.post).then(result => resolve(result)).catch(error => reject(error))
-                return
-            }
-            resolve()
-        })
-    ]).then(result => {
-        result = Arr.flatten(result)
-        //Checks for errors
-        if(result.some(_.isError)) {
-
-            //Log all errors
-            result.filter(_.isError).forEach(error => {
-                console.log(error)
-            })
-
+Prom.sequence([
+    //Pre local script
+    () => new Promise((resolve, reject) => {
+        if(configs.scripts.local.pre && configs.scripts.local.pre[0]) {
+            console.log('Initiating execution of local scripts...')
+            executeScript(shell, configs.scripts.local.pre).then(result => resolve(result)).catch(error => reject(error))
             return
         }
 
-        console.log('Done!')
-        process.exit();
-    })
-}
+        resolve()
+    }),
+    //Connecting
+    () => new Promise((resolve, reject) => {
+        console.log('Connecting to server through ssh...')
+        ssh.connect({
+            host: configs.host,
+            username: configs.user,
+            password: configs.pass
+        }).then(() => {
+            console.log('Connected!')
+            resolve()
+        }, error => {
+            console.log('Connection failed!')
+            reject(error)
+        })
+    }),
+    //Pre remote script
+    () => new Promise((resolve, reject) => {
+        if(configs.scripts.remote.pre && configs.scripts.remote.pre[0]) {
+            console.log('Initiating execution of remote scripts...')
+            executeScript(ssh, configs.scripts.remote.pre, true, configs.paths.remote).then(result => resolve(result)).catch(error => reject(error))
+            return
+        }
+        resolve()
+    }),
+    //Uploading folder
+    () => new Promise((resolve, reject) => {
+        console.log('Initiating file upload...')
+        countFiles(configs.paths.local, {
+            ignore(filePath) {
+                return !ig.filter(filePath).length;
+            }
+        }, (error, result) => {
+            var bar = ProgressBar(result.files)
+            ssh.putDirectory(configs.paths.local, configs.paths.remote, {
+                recursive: true,
+                concurrency: 1,
+                validate(itemPath) {
+                    return ig.filter(itemPath).length;
+                },
+                tick(localPath, remotePath, error) {
+                    if(error) { console.log(error); return; }
+                    bar.tick()
+                }
+            }).then(status => {
+                console.log('')
+                resolve()
+            }, error => reject(error))
+        })
 
-exports.exec = exec
+    }),
+    //Post remote script
+    () => new Promise((resolve, reject) => {
+        if(configs.scripts.remote.post && configs.scripts.remote.post[0]) {
+            console.log('Initiating execution of remote scripts...')
+            executeScript(ssh, configs.scripts.remote.post, true, configs.paths.remote).then(result => resolve(result)).catch(error => reject(error))
+            return
+        }
+        resolve()
+    }),
+    //Post local script
+    () => new Promise((resolve, reject) => {
+        if(configs.scripts.local.post && configs.scripts.local.post[0]) {
+            console.log('Initiating execution of local scripts...')
+            executeScript(shell, configs.scripts.local.post).then(result => resolve(result)).catch(error => reject(error))
+            return
+        }
+        resolve()
+    })
+]).then(result => {
+    result = Arr.flatten(result)
+    //Checks for errors
+    if(result.some(_.isError)) {
+
+        //Log all errors
+        result.filter(_.isError).forEach(error => {
+            console.log(error)
+        })
+
+        return
+    }
+
+    console.log('Done!')
+    process.exit();
+})

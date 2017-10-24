@@ -4,10 +4,15 @@ pass: secret
 paths:
     local: .
     remote: /path/to/some/remote/folder
+ignore:
+    - node_modules
+    - vendor
+    - yarn.lock
+    - npm-debug.log
 scripts:
     local:
         pre:
         post:
     remote:
         pre:
-        post: 
+        post:
